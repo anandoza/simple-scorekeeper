@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Scorekeeper</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Simple Scorekeeper</title> <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,6 +25,7 @@
              width: 100%;
              height: 100%;
              /* Grid styles are set dynamically */
+             /* Explicit row sizing added via JS style property */
         }
         /* Player card styling */
         .player-card {
@@ -35,6 +35,8 @@
             justify-content: center;
             align-items: center;
             position: relative;
+            /* Add touch-action to prevent scrolling interfering with pointer events */
+            touch-action: manipulation;
         }
         /* Player name - Positioned absolutely */
         .player-name {
@@ -178,7 +180,7 @@
             { bg: 'bg-indigo-600', border: '#4f46e5' }, // indigo-600
             { bg: 'bg-teal-500', border: '#14b8a6' }    // teal-500
         ];
-        const initialFontSize = 120;
+        const initialFontSize = 110;
         const minFontSize = 10;
         const localStorageKey = 'scorekeeperAppState_v1';
 
@@ -213,7 +215,6 @@
         /** Updates the document title with current scores. */
         function updateDocumentTitle() {
             const titleParts = players.map(p => {
-                // Use first letter, or '?' if name is empty
                 const prefix = p.name ? p.name.substring(0, 1) : '?';
                 return `${prefix}(${p.score})`;
             });
@@ -273,9 +274,8 @@
         function resetHistory() {
              scoreHistory = [];
              tickCounter = 0;
-             recordHistory(); // Record state after reset
+             recordHistory();
              console.log('Score history reset.');
-             // Title might need update if scores changed to 0
              updateDocumentTitle();
         }
 
@@ -299,7 +299,7 @@
                 updateScoreDisplay(playerId);
                 tickCounter++;
                 recordHistory();
-                updateDocumentTitle(); // Update title on score change
+                updateDocumentTitle();
                 saveStateToLocalStorage();
             }
         }
@@ -312,7 +312,7 @@
                 updateScoreDisplay(playerId);
                 tickCounter++;
                 recordHistory();
-                updateDocumentTitle(); // Update title on score change
+                updateDocumentTitle();
                 saveStateToLocalStorage();
             }
         }
@@ -346,7 +346,6 @@
             playersContainer.innerHTML = '';
             const numPlayers = players.length;
 
-            // Updated grid layout logic
             let gridLayoutClasses = '';
             if (numPlayers <= 4) {
                 gridLayoutClasses = 'grid grid-cols-1';
@@ -354,7 +353,7 @@
                 else if (numPlayers === 3) gridLayoutClasses += ' sm:grid-cols-3';
                 else if (numPlayers === 4) gridLayoutClasses += ' sm:grid-cols-2 md:grid-cols-4';
             } else { // 5-8 players
-                gridLayoutClasses = 'grid grid-cols-2'; // Default 2 columns
+                gridLayoutClasses = 'grid grid-cols-2';
                 if (numPlayers === 5) gridLayoutClasses += ' sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3';
                 else if (numPlayers === 6) gridLayoutClasses += ' sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3';
                 else if (numPlayers === 7) gridLayoutClasses += ' sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4';
@@ -362,6 +361,8 @@
             }
 
             playersContainer.className = `p-1 ${gridLayoutClasses} h-full w-full`;
+            playersContainer.style.gridAutoRows = 'minmax(0, 1fr)';
+
             players.forEach((player, index) => {
                 const colorInfo = playerColors[index % playerColors.length];
                 const card = document.createElement('div');
@@ -369,8 +370,11 @@
                 card.className = `player-card ${colorInfo.bg} text-white p-3 cursor-pointer select-none transition-transform duration-100 ease-in-out`;
                 card.dataset.playerId = player.id;
 
+                // Add event listeners directly to the card for leave/cancel
+                card.addEventListener('pointerleave', handleIndividualCardLeave);
+                card.addEventListener('pointercancel', handleIndividualCardLeave); // Handle cancels too
+
                 const nameDiv = document.createElement('div');
-                // Added max-w-full to prevent absolute element causing overflow
                 nameDiv.className = 'player-name text-xl sm:text-2xl font-semibold break-words max-w-full';
                 nameDiv.textContent = player.name;
 
@@ -486,10 +490,9 @@
                 newPlayers.push({ id: nextId++, name: name || `Player ${i + 1}`, score: score });
             }
             players = newPlayers;
-            resetHistory(); // Resets history and updates title
+            resetHistory();
             saveStateToLocalStorage();
             renderPlayerCards();
-            // Title is updated in resetHistory, but call again ensure it reflects final state if resetHistory changes
             updateDocumentTitle();
             closeSettingsModal();
             console.log('Settings saved', players);
@@ -538,37 +541,73 @@
 
         /** Clears the long press timer. */
         function clearPressTimer() {
-            if (pressTimer !== null) { clearTimeout(pressTimer); pressTimer = null; }
+            if (pressTimer !== null) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+                // console.log('Press timer cleared');
+            }
         }
 
         // --- Event Handlers ---
         function handlePressStart(event) {
+            // Ensure the target is a player card or descendant
             const playerCard = event.target.closest('.player-card');
             if (!playerCard) return;
-            event.preventDefault();
+
+            event.preventDefault(); // Prevent text selection, etc.
             const playerId = parseInt(playerCard.dataset.playerId, 10);
             if (isNaN(playerId)) return;
-            clearPressTimer(); isLongPress = false;
+
+            clearPressTimer(); // Clear any existing timer
+            isLongPress = false; // Reset long press flag
+
+            // Start the timer for long press detection
             pressTimer = setTimeout(() => {
-                isLongPress = true; decrementScore(playerId);
-                if (navigator.vibrate) navigator.vibrate(100);
+                isLongPress = true;
+                decrementScore(playerId); // Decrement calls saveState
+                // console.log(`Long press triggered for Player ID ${playerId}`);
+                if (navigator.vibrate) navigator.vibrate(100); // Haptic feedback
             }, longPressDuration);
+
+            // console.log(`Press started for Player ID ${playerId}`);
         }
+
         function handlePressEnd(event) {
+            // Check if the press *ended* on a player card (might not be the original one)
             const playerCard = event.target.closest('.player-card');
-            if (!playerCard) return;
+            if (!playerCard) {
+                // If the press ended outside *any* card, ensure timer is cleared
+                clearPressTimer();
+                isLongPress = false;
+                return;
+            }
+
             event.preventDefault();
             const playerId = parseInt(playerCard.dataset.playerId, 10);
-            if (isNaN(playerId)) return;
+            if (isNaN(playerId)) return; // Should have ID if it's a card
+
+            const wasLongPress = isLongPress; // Capture flag before clearing timer
+
+            clearPressTimer(); // Clear timer regardless
+
+            // Only increment if it wasn't a long press *and* the timer wasn't cleared by leaving
+            if (!wasLongPress) {
+                incrementScore(playerId); // Increment calls saveState
+                // console.log(`Tap triggered for Player ID ${playerId}`);
+            }
+
+            isLongPress = false; // Reset flag for next interaction
+            // console.log(`Press ended for Player ID ${playerId}`);
+        }
+
+        /** Handles pointer leaving a specific player card during a potential long press. */
+        function handleIndividualCardLeave(event) {
+            // console.log(`Pointer left card ${event.currentTarget.id}`);
+            // If pointer leaves the specific card the press started on, cancel the timer.
             clearPressTimer();
-            if (!isLongPress) { incrementScore(playerId); }
-            isLongPress = false;
+            isLongPress = false; // Ensure it's not marked as a long press if pointer leaves
         }
-        function handlePressCancel(event) {
-             const playerCard = event.target.closest('.player-card');
-             if (!playerCard) return;
-             event.preventDefault(); clearPressTimer(); isLongPress = false;
-        }
+
         /** Handles click on the 'Set Scores to 0' button inside the modal */
         function handleModalResetClick() {
              console.log('Setting modal score inputs to 0.');
@@ -584,27 +623,28 @@
             if (!loaded) {
                 console.log('No valid saved state found, initializing defaults.');
                 players = [ { id: 1, name: 'Player 1', score: 0 }, { id: 2, name: 'Player 2', score: 0 } ];
-                resetHistory(); // Also updates title
+                resetHistory();
                 saveStateToLocalStorage();
             } else {
                  console.log('Successfully loaded state from Local Storage.');
-                 // Update title with loaded state
                  updateDocumentTitle();
             }
-            renderPlayerCards();
+            renderPlayerCards(); // Render cards based on loaded or default state
 
             // --- Attach Event Listeners ---
+            // Use delegation for down/up events on the container
             playersContainer.addEventListener('pointerdown', handlePressStart);
-            playersContainer.addEventListener('pointerup', handlePressEnd);
-            playersContainer.addEventListener('pointerleave', handlePressCancel);
+            // Attach pointerup to the document to catch lifts outside the container/cards
+            document.addEventListener('pointerup', handlePressEnd);
+            // NOTE: pointerleave is now handled directly on cards in renderPlayerCards
+
             playersContainer.addEventListener('contextmenu', (e) => { if (e.target.closest('.player-card')) e.preventDefault(); });
             settingsButton.addEventListener('click', openSettingsModal);
             cancelSettingsButton.addEventListener('click', closeSettingsModal);
-            saveSettingsButton.addEventListener('click', saveSettings); // saveSettings calls updateDocumentTitle via resetHistory
+            saveSettingsButton.addEventListener('click', saveSettings);
             graphButton.addEventListener('click', openGraphModal);
             closeGraphButton.addEventListener('click', closeGraphModal);
             resetScoresModalButton.addEventListener('click', handleModalResetClick);
-
             decrementPlayersButton.addEventListener('click', () => {
                 let currentCount = parseInt(numPlayersDisplay.value, 10);
                 if (currentCount > minPlayers) {
