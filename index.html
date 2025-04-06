@@ -16,9 +16,9 @@
             overscroll-behavior-y: contain;
             overflow: hidden; /* Prevent body scroll */
         }
-        /* Ensure player cards container takes up available height */
+        /* Player container wrapper: Use calc() for height */
         #players-container-wrapper {
-            flex-grow: 1;
+            height: calc(100vh - 80px); /* Calculate height minus bottom bar (80px) */
             overflow: hidden;
             display: flex;
         }
@@ -27,41 +27,38 @@
              height: 100%;
              /* Grid styles are set dynamically */
         }
-        /* Player card styling - Added position: relative */
+        /* Player card styling */
         .player-card {
             overflow: hidden;
-            display: flex; /* Keep flex for the wrapper */
-            flex-direction: column; /* Needed for wrapper to grow */
-            justify-content: center; /* Center wrapper content (score) */
-            align-items: center; /* Center wrapper content (score) */
-            position: relative; /* Crucial for absolute positioning of name */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
         }
         /* Player name - Positioned absolutely */
         .player-name {
              position: absolute;
              top: 0.75rem; /* p-3 equivalent for top padding */
-             left: 0.75rem; /* p-3 equivalent for side padding */
-             right: 0.75rem; /* p-3 equivalent for side padding */
+             left: 0.75rem;
+             right: 0.75rem;
              text-align: center;
-             z-index: 10; /* Ensure name is above score if overlap occurs */
-             /* Other styles moved to renderPlayerCards for dynamic application */
+             z-index: 10;
         }
-        /* Score wrapper styling - Takes full height */
+        /* Score wrapper styling - Takes full height, padded top */
         .player-score-wrapper {
-             /* flex-grow: 1; No longer needed with absolute name */
              width: 100%;
              height: 100%; /* Take full card height */
              display: flex;
              justify-content: center;
              align-items: center;
              overflow: hidden;
-             padding-top: 2.5rem; /* Add padding to prevent overlap with name */
+             padding-top: 2.5rem; /* Prevent overlap with name */
         }
         /* Score text styling */
         .player-score {
-            line-height: 1; /* Crucial for size calculation */
+            line-height: 1;
             overflow: hidden;
-            /* Font size is set dynamically by JS */
         }
         .player-card:active {
             transform: scale(0.98);
@@ -118,7 +115,8 @@
         </button>
     </div>
 
-    <div id="settings-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50"> <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md flex flex-col max-h-[calc(100vh-8rem)]">
+    <div id="settings-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md flex flex-col max-h-[calc(100vh-8rem)]">
             <h2 class="text-2xl font-bold mb-4 text-gray-800 flex-shrink-0">Settings</h2>
             <div class="flex-grow overflow-y-auto mb-4 pr-2">
                 <div class="mb-4">
@@ -150,7 +148,8 @@
         </div>
     </div>
 
-     <div id="graph-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50"> <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl flex flex-col max-h-[calc(100vh-8rem)]">
+     <div id="graph-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl flex flex-col max-h-[calc(100vh-8rem)]">
             <h2 class="text-2xl font-bold mb-4 text-gray-800 flex-shrink-0">Score History</h2>
             <div id="graph-container" class="mb-4 flex-grow relative">
                  <canvas id="score-chart-canvas"></canvas>
@@ -206,8 +205,20 @@
         const closeGraphButton = document.getElementById('close-graph-button');
         const scoreChartCanvas = document.getElementById('score-chart-canvas');
         const resetScoresModalButton = document.getElementById('reset-scores-modal-button');
+        const playersContainerWrapper = document.getElementById('players-container-wrapper');
+
 
         // --- Functions ---
+
+        /** Updates the document title with current scores. */
+        function updateDocumentTitle() {
+            const titleParts = players.map(p => {
+                // Use first letter, or '?' if name is empty
+                const prefix = p.name ? p.name.substring(0, 1) : '?';
+                return `${prefix}(${p.score})`;
+            });
+            document.title = titleParts.join(' ') + ' - Scorekeeper';
+        }
 
         /** Saves the current application state to Local Storage. */
         function saveStateToLocalStorage() {
@@ -262,8 +273,10 @@
         function resetHistory() {
              scoreHistory = [];
              tickCounter = 0;
-             recordHistory();
+             recordHistory(); // Record state after reset
              console.log('Score history reset.');
+             // Title might need update if scores changed to 0
+             updateDocumentTitle();
         }
 
         /** Updates the score display and adjusts font size. */
@@ -273,13 +286,12 @@
                 const scoreElement = document.getElementById(`score-${playerId}`);
                 if (scoreElement) {
                     scoreElement.textContent = player.score;
-                    // Adjust font size based on the score wrapper
                     adjustFontSize(scoreElement.closest('.player-score-wrapper'));
                 }
             }
         }
 
-        /** Increments score, updates display, records history, saves state. */
+        /** Increments score, updates display/title, records history, saves state. */
         function incrementScore(playerId) {
             const player = players.find(p => p.id === playerId);
             if (player) {
@@ -287,11 +299,12 @@
                 updateScoreDisplay(playerId);
                 tickCounter++;
                 recordHistory();
+                updateDocumentTitle(); // Update title on score change
                 saveStateToLocalStorage();
             }
         }
 
-        /** Decrements score (if > 0), updates display, records history, saves state. */
+        /** Decrements score (if > 0), updates display/title, records history, saves state. */
         function decrementScore(playerId) {
             const player = players.find(p => p.id === playerId);
             if (player && player.score > 0) {
@@ -299,6 +312,7 @@
                 updateScoreDisplay(playerId);
                 tickCounter++;
                 recordHistory();
+                updateDocumentTitle(); // Update title on score change
                 saveStateToLocalStorage();
             }
         }
@@ -310,7 +324,6 @@
             if (!scoreElement) return;
             let currentFontSize = initialFontSize;
             scoreElement.style.fontSize = `${currentFontSize}px`;
-            // Check against the wrapper's dimensions
             while (
                 (scoreElement.scrollHeight > scoreWrapper.clientHeight || scoreElement.scrollWidth > scoreWrapper.clientWidth) &&
                 currentFontSize > minFontSize
@@ -333,45 +346,46 @@
             playersContainer.innerHTML = '';
             const numPlayers = players.length;
 
-            // Grid layout logic
-            let gridLayoutClasses = 'grid grid-cols-1';
-            if (numPlayers === 2) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-2';
-            else if (numPlayers === 3) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-3';
-            else if (numPlayers === 4) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
-            else if (numPlayers === 5 || numPlayers === 6) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3';
-            else if (numPlayers === 7 || numPlayers === 8) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4';
-            else if (numPlayers > 8) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4';
+            // Updated grid layout logic
+            let gridLayoutClasses = '';
+            if (numPlayers <= 4) {
+                gridLayoutClasses = 'grid grid-cols-1';
+                if (numPlayers === 2) gridLayoutClasses += ' sm:grid-cols-2';
+                else if (numPlayers === 3) gridLayoutClasses += ' sm:grid-cols-3';
+                else if (numPlayers === 4) gridLayoutClasses += ' sm:grid-cols-2 md:grid-cols-4';
+            } else { // 5-8 players
+                gridLayoutClasses = 'grid grid-cols-2'; // Default 2 columns
+                if (numPlayers === 5) gridLayoutClasses += ' sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3';
+                else if (numPlayers === 6) gridLayoutClasses += ' sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3';
+                else if (numPlayers === 7) gridLayoutClasses += ' sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4';
+                else if (numPlayers === 8) gridLayoutClasses += ' sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-4';
+            }
 
-            playersContainer.className = `flex-grow p-1 ${gridLayoutClasses} h-full w-full`;
+            playersContainer.className = `p-1 ${gridLayoutClasses} h-full w-full`;
             players.forEach((player, index) => {
                 const colorInfo = playerColors[index % playerColors.length];
                 const card = document.createElement('div');
                 card.id = `player-${player.id}`;
-                // Base card styles (flex, relative positioning set in CSS)
                 card.className = `player-card ${colorInfo.bg} text-white p-3 cursor-pointer select-none transition-transform duration-100 ease-in-out`;
                 card.dataset.playerId = player.id;
 
-                // Name Div (Absolutely Positioned via CSS class .player-name)
                 const nameDiv = document.createElement('div');
-                // Added player-name class, dynamic text styles
-                nameDiv.className = 'player-name text-xl sm:text-2xl font-semibold break-words';
+                // Added max-w-full to prevent absolute element causing overflow
+                nameDiv.className = 'player-name text-xl sm:text-2xl font-semibold break-words max-w-full';
                 nameDiv.textContent = player.name;
 
-                // Score Wrapper (Takes full height via CSS class .player-score-wrapper)
                 const scoreWrapper = document.createElement('div');
-                scoreWrapper.className = 'player-score-wrapper'; // Styles applied in CSS
+                scoreWrapper.className = 'player-score-wrapper';
 
-                // Score Text
                 const scoreDiv = document.createElement('div');
                 scoreDiv.id = `score-${player.id}`;
-                scoreDiv.className = 'player-score font-bold'; // Styles applied in CSS
+                scoreDiv.className = 'player-score font-bold';
                 scoreDiv.textContent = player.score;
-                scoreDiv.style.fontSize = `${initialFontSize}px`; // Initial size for adjustment
+                scoreDiv.style.fontSize = `${initialFontSize}px`;
                 scoreDiv.style.lineHeight = '1';
 
-                // Appending elements
                 scoreWrapper.appendChild(scoreDiv);
-                card.appendChild(nameDiv); // Name is absolute, order doesn't strictly matter for layout but good practice
+                card.appendChild(nameDiv);
                 card.appendChild(scoreWrapper);
                 playersContainer.appendChild(card);
             });
@@ -472,9 +486,11 @@
                 newPlayers.push({ id: nextId++, name: name || `Player ${i + 1}`, score: score });
             }
             players = newPlayers;
-            resetHistory();
+            resetHistory(); // Resets history and updates title
             saveStateToLocalStorage();
             renderPlayerCards();
+            // Title is updated in resetHistory, but call again ensure it reflects final state if resetHistory changes
+            updateDocumentTitle();
             closeSettingsModal();
             console.log('Settings saved', players);
         }
@@ -568,10 +584,12 @@
             if (!loaded) {
                 console.log('No valid saved state found, initializing defaults.');
                 players = [ { id: 1, name: 'Player 1', score: 0 }, { id: 2, name: 'Player 2', score: 0 } ];
-                resetHistory();
+                resetHistory(); // Also updates title
                 saveStateToLocalStorage();
             } else {
                  console.log('Successfully loaded state from Local Storage.');
+                 // Update title with loaded state
+                 updateDocumentTitle();
             }
             renderPlayerCards();
 
@@ -582,12 +600,11 @@
             playersContainer.addEventListener('contextmenu', (e) => { if (e.target.closest('.player-card')) e.preventDefault(); });
             settingsButton.addEventListener('click', openSettingsModal);
             cancelSettingsButton.addEventListener('click', closeSettingsModal);
-            saveSettingsButton.addEventListener('click', saveSettings);
+            saveSettingsButton.addEventListener('click', saveSettings); // saveSettings calls updateDocumentTitle via resetHistory
             graphButton.addEventListener('click', openGraphModal);
             closeGraphButton.addEventListener('click', closeGraphModal);
             resetScoresModalButton.addEventListener('click', handleModalResetClick);
 
-            // Add listeners for the new +/- buttons
             decrementPlayersButton.addEventListener('click', () => {
                 let currentCount = parseInt(numPlayersDisplay.value, 10);
                 if (currentCount > minPlayers) {
@@ -599,7 +616,7 @@
             });
             incrementPlayersButton.addEventListener('click', () => {
                 let currentCount = parseInt(numPlayersDisplay.value, 10);
-                if (currentCount < maxPlayers) { // Use updated maxPlayers
+                if (currentCount < maxPlayers) {
                     currentCount++;
                     numPlayersDisplay.value = currentCount;
                     updateCountButtonStates(currentCount);
@@ -610,7 +627,7 @@
             let resizeTimeout;
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimeout);
-                resizeTimeout = setTimeout(adjustAllFontSizes, 150);
+                adjustAllFontSizes();
             });
             console.log('Scorekeeper App Initialized.');
         }
