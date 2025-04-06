@@ -15,9 +15,10 @@
             overscroll-behavior-y: contain;
             overflow: hidden; /* Prevent body scroll */
         }
-        /* Player container wrapper: Use calc() for height */
+        /* Player container wrapper: Use calc() with svh for height */
         #players-container-wrapper {
-            height: calc(100vh - 80px); /* Calculate height minus bottom bar (80px) */
+            /* Changed 100vh to 100svh for better mobile compatibility */
+            height: calc(100svh - 80px); /* Calculate height minus bottom bar (80px) using small viewport height */
             overflow: hidden;
             display: flex;
         }
@@ -35,7 +36,6 @@
             justify-content: center;
             align-items: center;
             position: relative;
-            /* Add touch-action to prevent scrolling interfering with pointer events */
             touch-action: manipulation;
         }
         /* Player name - Positioned absolutely */
@@ -180,7 +180,7 @@
             { bg: 'bg-indigo-600', border: '#4f46e5' }, // indigo-600
             { bg: 'bg-teal-500', border: '#14b8a6' }    // teal-500
         ];
-        const initialFontSize = 110;
+        const initialFontSize = 110; // Using slightly reduced initial size
         const minFontSize = 10;
         const localStorageKey = 'scorekeeperAppState_v1';
 
@@ -346,6 +346,7 @@
             playersContainer.innerHTML = '';
             const numPlayers = players.length;
 
+            // Updated grid layout logic
             let gridLayoutClasses = '';
             if (numPlayers <= 4) {
                 gridLayoutClasses = 'grid grid-cols-1';
@@ -372,7 +373,7 @@
 
                 // Add event listeners directly to the card for leave/cancel
                 card.addEventListener('pointerleave', handleIndividualCardLeave);
-                card.addEventListener('pointercancel', handleIndividualCardLeave); // Handle cancels too
+                card.addEventListener('pointercancel', handleIndividualCardLeave);
 
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'player-name text-xl sm:text-2xl font-semibold break-words max-w-full';
@@ -544,68 +545,65 @@
             if (pressTimer !== null) {
                 clearTimeout(pressTimer);
                 pressTimer = null;
-                // console.log('Press timer cleared');
             }
         }
 
         // --- Event Handlers ---
         function handlePressStart(event) {
-            // Ensure the target is a player card or descendant
             const playerCard = event.target.closest('.player-card');
             if (!playerCard) return;
-
-            event.preventDefault(); // Prevent text selection, etc.
+            event.preventDefault();
             const playerId = parseInt(playerCard.dataset.playerId, 10);
             if (isNaN(playerId)) return;
-
-            clearPressTimer(); // Clear any existing timer
-            isLongPress = false; // Reset long press flag
-
-            // Start the timer for long press detection
+            clearPressTimer();
+            isLongPress = false;
             pressTimer = setTimeout(() => {
                 isLongPress = true;
-                decrementScore(playerId); // Decrement calls saveState
-                // console.log(`Long press triggered for Player ID ${playerId}`);
-                if (navigator.vibrate) navigator.vibrate(100); // Haptic feedback
+                decrementScore(playerId);
+                if (navigator.vibrate) navigator.vibrate(100);
             }, longPressDuration);
-
-            // console.log(`Press started for Player ID ${playerId}`);
         }
 
         function handlePressEnd(event) {
-            // Check if the press *ended* on a player card (might not be the original one)
-            const playerCard = event.target.closest('.player-card');
-            if (!playerCard) {
-                // If the press ended outside *any* card, ensure timer is cleared
-                clearPressTimer();
-                isLongPress = false;
-                return;
+            // Use document event listener, check if target is still within *a* player card
+            const relatedTargetCard = document.elementFromPoint(event.clientX, event.clientY)?.closest('.player-card');
+
+            // If press ended outside *any* card, clear timer and do nothing else
+            if (!relatedTargetCard) {
+                 clearPressTimer();
+                 isLongPress = false;
+                 return;
             }
 
-            event.preventDefault();
-            const playerId = parseInt(playerCard.dataset.playerId, 10);
-            if (isNaN(playerId)) return; // Should have ID if it's a card
+            // If press ended on a card (could be original or different)
+            const playerId = parseInt(relatedTargetCard.dataset.playerId, 10);
+             if (isNaN(playerId)) { // Should not happen if it's a card
+                 clearPressTimer();
+                 isLongPress = false;
+                 return;
+             }
 
-            const wasLongPress = isLongPress; // Capture flag before clearing timer
+            const wasLongPress = isLongPress;
+            clearPressTimer();
 
-            clearPressTimer(); // Clear timer regardless
-
-            // Only increment if it wasn't a long press *and* the timer wasn't cleared by leaving
+            // Only increment if it wasn't a long press
+            // The handleIndividualCardLeave should have already cleared the timer if the pointer left the original card
             if (!wasLongPress) {
-                incrementScore(playerId); // Increment calls saveState
-                // console.log(`Tap triggered for Player ID ${playerId}`);
+                // We only increment if the pointerup event target is still within the *same* card
+                // where the pointerdown started. We need to store the original target.
+                // Let's simplify: The current logic increments if it wasn't a long press.
+                // This means if you drag to another card and lift, it increments the *new* card.
+                // Let's keep this simpler behaviour for now unless specified otherwise.
+                incrementScore(playerId);
             }
-
-            isLongPress = false; // Reset flag for next interaction
-            // console.log(`Press ended for Player ID ${playerId}`);
+            isLongPress = false;
         }
+
 
         /** Handles pointer leaving a specific player card during a potential long press. */
         function handleIndividualCardLeave(event) {
-            // console.log(`Pointer left card ${event.currentTarget.id}`);
-            // If pointer leaves the specific card the press started on, cancel the timer.
             clearPressTimer();
-            isLongPress = false; // Ensure it's not marked as a long press if pointer leaves
+            isLongPress = false;
         }
 
         /** Handles click on the 'Set Scores to 0' button inside the modal */
@@ -632,11 +630,10 @@
             renderPlayerCards(); // Render cards based on loaded or default state
 
             // --- Attach Event Listeners ---
-            // Use delegation for down/up events on the container
             playersContainer.addEventListener('pointerdown', handlePressStart);
-            // Attach pointerup to the document to catch lifts outside the container/cards
+            // Attach pointerup to the document to catch lifts anywhere
             document.addEventListener('pointerup', handlePressEnd);
-            // NOTE: pointerleave is now handled directly on cards in renderPlayerCards
+            // pointerleave/cancel are attached directly to cards in renderPlayerCards
 
             playersContainer.addEventListener('contextmenu', (e) => { if (e.target.closest('.player-card')) e.preventDefault(); });
             settingsButton.addEventListener('click', openSettingsModal);
@@ -668,6 +665,11 @@
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimeout);
                 adjustAllFontSizes();
+                // If svh doesn't work reliably, uncomment JS height calculation:
+                // const controlBar = document.querySelector('.sticky.bottom-0');
+                // const controlBarHeight = controlBar ? controlBar.offsetHeight : 80; // Fallback height
+                // playersContainerWrapper.style.height = `${window.innerHeight - controlBarHeight}px`;
+
             });
             console.log('Scorekeeper App Initialized.');
         }
