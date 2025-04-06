@@ -135,16 +135,16 @@
                     </div>
             </div>
             <div class="flex justify-between items-center flex-shrink-0 border-t pt-4">
-                 <button id="reset-scores-modal-button" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150 shadow-sm">
+                <div class="flex gap-3">
+                <button id="reset-scores-modal-button" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150 shadow-sm">
                     Reset Scores
                 </button>
-                <div class="flex gap-3">
-                    <button id="cancel-settings-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md transition-colors duration-150">
-                        Cancel
-                    </button>
-                    <button id="save-settings-button" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150">
-                        Save Changes
-                    </button>
+                <button id="cancel-settings-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                    Cancel
+                </button>
+                <button id="save-settings-button" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                    Save Changes
+                </button>
                 </div>
             </div>
         </div>
@@ -180,7 +180,7 @@
             { bg: 'bg-indigo-600', border: '#4f46e5' }, // indigo-600
             { bg: 'bg-teal-500', border: '#14b8a6' }    // teal-500
         ];
-        const initialFontSize = 110; // Using slightly reduced initial size
+        const initialFontSize = 110;
         const minFontSize = 10;
         const localStorageKey = 'scorekeeperAppState_v1';
 
