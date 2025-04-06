@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Scorekeeper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Apply Inter font globally */
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior-y: contain;
+            overflow: hidden; /* Prevent body scroll */
+        }
+        /* Ensure player cards container takes up available height */
+        #players-container-wrapper {
+            flex-grow: 1;
+            overflow: hidden;
+            display: flex;
+        }
+        #players-container {
+             width: 100%;
+             height: 100%;
+             /* Grid styles are set dynamically */
+        }
+        /* Player card styling - Added position: relative */
+        .player-card {
+            overflow: hidden;
+            display: flex; /* Keep flex for the wrapper */
+            flex-direction: column; /* Needed for wrapper to grow */
+            justify-content: center; /* Center wrapper content (score) */
+            align-items: center; /* Center wrapper content (score) */
+            position: relative; /* Crucial for absolute positioning of name */
+        }
+        /* Player name - Positioned absolutely */
+        .player-name {
+             position: absolute;
+             top: 0.75rem; /* p-3 equivalent for top padding */
+             left: 0.75rem; /* p-3 equivalent for side padding */
+             right: 0.75rem; /* p-3 equivalent for side padding */
+             text-align: center;
+             z-index: 10; /* Ensure name is above score if overlap occurs */
+             /* Other styles moved to renderPlayerCards for dynamic application */
+        }
+        /* Score wrapper styling - Takes full height */
+        .player-score-wrapper {
+             /* flex-grow: 1; No longer needed with absolute name */
+             width: 100%;
+             height: 100%; /* Take full card height */
+             display: flex;
+             justify-content: center;
+             align-items: center;
+             overflow: hidden;
+             padding-top: 2.5rem; /* Add padding to prevent overlap with name */
+        }
+        /* Score text styling */
+        .player-score {
+            line-height: 1; /* Crucial for size calculation */
+            overflow: hidden;
+            /* Font size is set dynamically by JS */
+        }
+        .player-card:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+        /* Modal base styles */
+        .modal { display: none; }
+        .modal.active { display: flex; }
+        .modal input[type="text"], .modal input[type="number"] { color: #333; }
+        /* Graph container */
+        #graph-container { width: 100%; height: 300px; position: relative; }
+        /* Settings player input row */
+        .player-settings-row { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+        .player-settings-row label { grid-column: 1 / 3; }
+        .player-settings-row input[type="text"] { grid-column: 1 / 2; }
+        .player-settings-row input[type="number"] { grid-column: 2 / 3; width: 70px; }
+
+        /* Style for white icons using filter */
+        .icon-white {
+             filter: brightness(0) invert(1);
+        }
+        /* Style for the player count display input */
+        #num-players-display {
+            text-align: center;
+            background-color: #f3f4f6; /* bg-gray-100 */
+            cursor: default;
+        }
+        /* Style for +/- buttons */
+        .count-button {
+            width: 2.5rem; height: 2.5rem; display: inline-flex;
+            justify-content: center; align-items: center;
+            font-size: 1.25rem; font-weight: 600; border-radius: 0.375rem;
+            border: 1px solid #d1d5db; background-color: white; color: #374151;
+            transition: background-color 0.15s ease-in-out;
+        }
+        .count-button:hover { background-color: #f9fafb; }
+        .count-button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #f3f4f6; }
+
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col h-screen max-h-screen">
+
+    <div id="players-container-wrapper">
+        <div id="players-container" class="grid gap-0 p-1">
+            </div>
+    </div>
+
+    <div class="p-4 h-[80px] flex items-center justify-between bg-gray-100 sticky bottom-0 flex-shrink-0">
+         <button id="graph-button" title="Show Score History" class="bg-gray-700 hover:bg-gray-800 text-white p-3 rounded-lg shadow-md transition-colors duration-150">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/line-chart.svg" alt="Graph" class="w-6 h-6 icon-white"/>
+        </button>
+        <button id="settings-button" title="Open Settings" class="bg-gray-700 hover:bg-gray-800 text-white p-3 rounded-lg shadow-md transition-colors duration-150">
+             <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/settings.svg" alt="Settings" class="w-6 h-6 icon-white"/>
+        </button>
+    </div>
+
+    <div id="settings-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50"> <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md flex flex-col max-h-[calc(100vh-8rem)]">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800 flex-shrink-0">Settings</h2>
+            <div class="flex-grow overflow-y-auto mb-4 pr-2">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Number of Players:</label>
+                    <div class="flex items-center gap-2">
+                        <button id="decrement-players-button" class="count-button" aria-label="Decrease player count">-</button>
+                        <input type="text" id="num-players-display" name="num-players" readonly
+                               class="w-16 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-0 focus:border-gray-300">
+                        <button id="increment-players-button" class="count-button" aria-label="Increase player count">+</button>
+                    </div>
+                 </div>
+                <h3 class="text-lg font-semibold mb-2 text-gray-700">Player Details</h3>
+                <div id="player-settings-container">
+                    </div>
+            </div>
+            <div class="flex justify-between items-center flex-shrink-0 border-t pt-4">
+                 <button id="reset-scores-modal-button" title="Set Scores in Modal to Zero" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150 shadow-sm">
+                    Set Scores to 0
+                </button>
+                <div class="flex gap-3">
+                    <button id="cancel-settings-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                        Cancel
+                    </button>
+                    <button id="save-settings-button" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+     <div id="graph-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50"> <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl flex flex-col max-h-[calc(100vh-8rem)]">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800 flex-shrink-0">Score History</h2>
+            <div id="graph-container" class="mb-4 flex-grow relative">
+                 <canvas id="score-chart-canvas"></canvas>
+            </div>
+            <div class="flex justify-end flex-shrink-0 border-t pt-4">
+                <button id="close-graph-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Configuration ---
+        const longPressDuration = 500;
+        const minPlayers = 1;
+        const maxPlayers = 8;
+        const playerColors = [
+            { bg: 'bg-blue-600', border: '#2563eb' },   // blue-600
+            { bg: 'bg-red-600', border: '#dc2626' },     // red-600
+            { bg: 'bg-green-600', border: '#16a34a' },  // green-600
+            { bg: 'bg-yellow-500', border: '#eab308' }, // yellow-500
+            { bg: 'bg-purple-600', border: '#9333ea' }, // purple-600
+            { bg: 'bg-pink-600', border: '#db2777' },   // pink-600
+            { bg: 'bg-indigo-600', border: '#4f46e5' }, // indigo-600
+            { bg: 'bg-teal-500', border: '#14b8a6' }    // teal-500
+        ];
+        const initialFontSize = 120;
+        const minFontSize = 10;
+        const localStorageKey = 'scorekeeperAppState_v1';
+
+        // --- State ---
+        let players = [ { id: 1, name: 'Player 1', score: 0 }, { id: 2, name: 'Player 2', score: 0 } ];
+        let scoreHistory = [];
+        let tickCounter = 0;
+        let pressTimer = null;
+        let isLongPress = false;
+        let scoreChart = null;
+
+        // --- DOM Elements ---
+        const playersContainer = document.getElementById('players-container');
+        const settingsButton = document.getElementById('settings-button');
+        const settingsModal = document.getElementById('settings-modal');
+        const numPlayersDisplay = document.getElementById('num-players-display');
+        const decrementPlayersButton = document.getElementById('decrement-players-button');
+        const incrementPlayersButton = document.getElementById('increment-players-button');
+        const playerSettingsContainer = document.getElementById('player-settings-container');
+        const saveSettingsButton = document.getElementById('save-settings-button');
+        const cancelSettingsButton = document.getElementById('cancel-settings-button');
+        const graphButton = document.getElementById('graph-button');
+        const graphModal = document.getElementById('graph-modal');
+        const closeGraphButton = document.getElementById('close-graph-button');
+        const scoreChartCanvas = document.getElementById('score-chart-canvas');
+        const resetScoresModalButton = document.getElementById('reset-scores-modal-button');
+
+        // --- Functions ---
+
+        /** Saves the current application state to Local Storage. */
+        function saveStateToLocalStorage() {
+            const stateToSave = { players: players, history: scoreHistory, tick: tickCounter };
+            try {
+                localStorage.setItem(localStorageKey, JSON.stringify(stateToSave));
+            } catch (error) {
+                console.error('Error saving state to Local Storage:', error);
+            }
+        }
+
+        /** Loads application state from Local Storage. Returns true if successful, false otherwise. */
+        function loadStateFromLocalStorage() {
+            try {
+                const savedStateJSON = localStorage.getItem(localStorageKey);
+                if (savedStateJSON) {
+                    const savedState = JSON.parse(savedStateJSON);
+                    if (savedState && Array.isArray(savedState.players) && Array.isArray(savedState.history) && typeof savedState.tick === 'number') {
+                        if (savedState.players.length >= minPlayers && savedState.players.length <= maxPlayers) {
+                            players = savedState.players;
+                            scoreHistory = savedState.history;
+                            tickCounter = savedState.tick;
+                            console.log('State loaded from Local Storage.');
+                            return true;
+                        } else {
+                             console.warn(`Loaded player count (${savedState.players.length}) out of bounds (${minPlayers}-${maxPlayers}). Resetting state.`);
+                             localStorage.removeItem(localStorageKey);
+                        }
+                    } else {
+                        console.warn('Invalid data structure found in Local Storage.');
+                        localStorage.removeItem(localStorageKey);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading state from Local Storage:', error);
+            }
+            return false;
+        }
+
+
+        /** Records the current state of scores in the history. */
+        function recordHistory() {
+            const currentScores = {};
+            players.forEach(p => { currentScores[p.id] = p.score; });
+            const lastEntry = scoreHistory[scoreHistory.length - 1];
+            if (!lastEntry || JSON.stringify(lastEntry.scores) !== JSON.stringify(currentScores)) {
+                 scoreHistory.push({ tick: tickCounter, scores: currentScores });
+            }
+        }
+
+        /** Resets the score history and tick counter, records initial state. */
+        function resetHistory() {
+             scoreHistory = [];
+             tickCounter = 0;
+             recordHistory();
+             console.log('Score history reset.');
+        }
+
+        /** Updates the score display and adjusts font size. */
+        function updateScoreDisplay(playerId) {
+            const player = players.find(p => p.id === playerId);
+            if (player) {
+                const scoreElement = document.getElementById(`score-${playerId}`);
+                if (scoreElement) {
+                    scoreElement.textContent = player.score;
+                    // Adjust font size based on the score wrapper
+                    adjustFontSize(scoreElement.closest('.player-score-wrapper'));
+                }
+            }
+        }
+
+        /** Increments score, updates display, records history, saves state. */
+        function incrementScore(playerId) {
+            const player = players.find(p => p.id === playerId);
+            if (player) {
+                player.score++;
+                updateScoreDisplay(playerId);
+                tickCounter++;
+                recordHistory();
+                saveStateToLocalStorage();
+            }
+        }
+
+        /** Decrements score (if > 0), updates display, records history, saves state. */
+        function decrementScore(playerId) {
+            const player = players.find(p => p.id === playerId);
+            if (player && player.score > 0) {
+                player.score--;
+                updateScoreDisplay(playerId);
+                tickCounter++;
+                recordHistory();
+                saveStateToLocalStorage();
+            }
+        }
+
+        /** Adjusts the font size of the score element to fit its container (the wrapper). */
+        function adjustFontSize(scoreWrapper) {
+            if (!scoreWrapper) return;
+            const scoreElement = scoreWrapper.querySelector('.player-score');
+            if (!scoreElement) return;
+            let currentFontSize = initialFontSize;
+            scoreElement.style.fontSize = `${currentFontSize}px`;
+            // Check against the wrapper's dimensions
+            while (
+                (scoreElement.scrollHeight > scoreWrapper.clientHeight || scoreElement.scrollWidth > scoreWrapper.clientWidth) &&
+                currentFontSize > minFontSize
+            ) {
+                currentFontSize--;
+                scoreElement.style.fontSize = `${currentFontSize}px`;
+            }
+        }
+
+        /** Adjusts font sizes for all player cards. */
+        function adjustAllFontSizes() {
+             requestAnimationFrame(() => {
+                 const scoreWrappers = playersContainer.querySelectorAll('.player-score-wrapper');
+                 scoreWrappers.forEach(adjustFontSize);
+             });
+        }
+
+        /** Renders player cards based on the 'players' array. */
+        function renderPlayerCards() {
+            playersContainer.innerHTML = '';
+            const numPlayers = players.length;
+
+            // Grid layout logic
+            let gridLayoutClasses = 'grid grid-cols-1';
+            if (numPlayers === 2) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-2';
+            else if (numPlayers === 3) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-3';
+            else if (numPlayers === 4) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
+            else if (numPlayers === 5 || numPlayers === 6) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3';
+            else if (numPlayers === 7 || numPlayers === 8) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4';
+            else if (numPlayers > 8) gridLayoutClasses = 'grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4';
+
+            playersContainer.className = `flex-grow p-1 ${gridLayoutClasses} h-full w-full`;
+            players.forEach((player, index) => {
+                const colorInfo = playerColors[index % playerColors.length];
+                const card = document.createElement('div');
+                card.id = `player-${player.id}`;
+                // Base card styles (flex, relative positioning set in CSS)
+                card.className = `player-card ${colorInfo.bg} text-white p-3 cursor-pointer select-none transition-transform duration-100 ease-in-out`;
+                card.dataset.playerId = player.id;
+
+                // Name Div (Absolutely Positioned via CSS class .player-name)
+                const nameDiv = document.createElement('div');
+                // Added player-name class, dynamic text styles
+                nameDiv.className = 'player-name text-xl sm:text-2xl font-semibold break-words';
+                nameDiv.textContent = player.name;
+
+                // Score Wrapper (Takes full height via CSS class .player-score-wrapper)
+                const scoreWrapper = document.createElement('div');
+                scoreWrapper.className = 'player-score-wrapper'; // Styles applied in CSS
+
+                // Score Text
+                const scoreDiv = document.createElement('div');
+                scoreDiv.id = `score-${player.id}`;
+                scoreDiv.className = 'player-score font-bold'; // Styles applied in CSS
+                scoreDiv.textContent = player.score;
+                scoreDiv.style.fontSize = `${initialFontSize}px`; // Initial size for adjustment
+                scoreDiv.style.lineHeight = '1';
+
+                // Appending elements
+                scoreWrapper.appendChild(scoreDiv);
+                card.appendChild(nameDiv); // Name is absolute, order doesn't strictly matter for layout but good practice
+                card.appendChild(scoreWrapper);
+                playersContainer.appendChild(card);
+            });
+            adjustAllFontSizes();
+        }
+
+        /** Updates the enable/disable state of +/- buttons based on current count. */
+        function updateCountButtonStates(count) {
+            decrementPlayersButton.disabled = count <= minPlayers;
+            incrementPlayersButton.disabled = count >= maxPlayers;
+        }
+
+        /** Updates the player name/score input fields UI based on the target player count. */
+        function updatePlayerInputsUI(targetCount) {
+            const currentNameInputs = playerSettingsContainer.querySelectorAll('input[type="text"]');
+            const currentScoreInputs = playerSettingsContainer.querySelectorAll('input[type="number"]');
+            const currentData = [];
+            const readLimit = Math.min(currentNameInputs.length, currentScoreInputs.length);
+            for(let i = 0; i < readLimit; i++) {
+                currentData.push({
+                    name: currentNameInputs[i].value,
+                    score: parseInt(currentScoreInputs[i].value, 10) || 0
+                });
+            }
+            generatePlayerSettingInputs(targetCount, currentData);
+        }
+
+
+        /** Generates input fields for player names and scores in the settings modal. */
+        function generatePlayerSettingInputs(count, currentPlayersData) {
+            playerSettingsContainer.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const playerIndex = i;
+                const currentData = currentPlayersData[playerIndex];
+                const currentName = currentData ? currentData.name : `Player ${playerIndex + 1}`;
+                const currentScore = currentData ? currentData.score : 0;
+                const row = document.createElement('div');
+                row.className = 'player-settings-row';
+                const nameLabel = document.createElement('label');
+                nameLabel.htmlFor = `player-name-input-${playerIndex + 1}`;
+                nameLabel.className = 'block text-xs font-medium text-gray-600';
+                nameLabel.textContent = `Player ${playerIndex + 1} Name & Score:`;
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.id = `player-name-input-${playerIndex + 1}`;
+                nameInput.className = 'w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500';
+                nameInput.value = currentName;
+                nameInput.dataset.index = playerIndex;
+                const scoreInput = document.createElement('input');
+                scoreInput.type = 'number';
+                scoreInput.id = `player-score-input-${playerIndex + 1}`;
+                scoreInput.className = 'px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500';
+                scoreInput.value = currentScore;
+                scoreInput.min = "0";
+                scoreInput.dataset.index = playerIndex;
+                row.appendChild(nameLabel);
+                row.appendChild(nameInput);
+                row.appendChild(scoreInput);
+                playerSettingsContainer.appendChild(row);
+            }
+        }
+
+        /** Opens the settings modal and populates inputs. */
+        function openSettingsModal() {
+            const currentCount = players.length;
+            numPlayersDisplay.value = currentCount;
+            updateCountButtonStates(currentCount);
+            generatePlayerSettingInputs(currentCount, players);
+            settingsModal.classList.add('active');
+        }
+
+         /** Closes the settings modal. */
+        function closeSettingsModal() {
+            settingsModal.classList.remove('active');
+        }
+
+        /** Saves settings, updates players from modal, resets history, saves state, re-renders. */
+        function saveSettings() {
+            const newPlayerCount = parseInt(numPlayersDisplay.value, 10);
+            if (isNaN(newPlayerCount) || newPlayerCount < minPlayers || newPlayerCount > maxPlayers) {
+                 console.error(`Invalid player count during save: ${newPlayerCount}`);
+                 alert(`Something went wrong. Player count must be between ${minPlayers} and ${maxPlayers}.`);
+                return;
+            }
+            const nameInputs = playerSettingsContainer.querySelectorAll('input[type="text"]');
+            const scoreInputs = playerSettingsContainer.querySelectorAll('input[type="number"]');
+            const newPlayers = [];
+            let nextId = 1;
+            for (let i = 0; i < newPlayerCount; i++) {
+                const nameInput = nameInputs[i];
+                const scoreInput = scoreInputs[i];
+                const name = nameInput ? nameInput.value.trim() : `Player ${i + 1}`;
+                let score = 0;
+                if (scoreInput) {
+                    const parsedScore = parseInt(scoreInput.value, 10);
+                    score = !isNaN(parsedScore) && parsedScore >= 0 ? parsedScore : 0;
+                }
+                newPlayers.push({ id: nextId++, name: name || `Player ${i + 1}`, score: score });
+            }
+            players = newPlayers;
+            resetHistory();
+            saveStateToLocalStorage();
+            renderPlayerCards();
+            closeSettingsModal();
+            console.log('Settings saved', players);
+        }
+
+        /** Renders the score history chart with updated axis styling. */
+        function renderScoreChart() {
+            if (scoreChart) { scoreChart.destroy(); }
+            const labels = scoreHistory.map(entry => entry.tick);
+            const datasets = players.map((player, index) => {
+                const colorInfo = playerColors[index % playerColors.length];
+                return {
+                    label: player.name,
+                    data: scoreHistory.map(entry => entry.scores[player.id] ?? null),
+                    borderColor: colorInfo.border,
+                    backgroundColor: colorInfo.border + '33',
+                    tension: 0.1,
+                    fill: false
+                };
+            });
+            const ctx = scoreChartCanvas.getContext('2d');
+            scoreChart = new Chart(ctx, {
+                type: 'line', data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Score' }, ticks: { precision: 0 } },
+                        x: { title: { display: false }, ticks: { display: false }, grid: { display: false } }
+                    },
+                    plugins: { legend: { position: 'top' }, title: { display: true, text: 'Score History' } }
+                }
+            });
+        }
+
+         /** Opens the graph modal and renders the chart. */
+        function openGraphModal() {
+            graphModal.classList.add('active');
+            requestAnimationFrame(() => { renderScoreChart(); });
+        }
+
+         /** Closes the graph modal and cleans up chart instance. */
+        function closeGraphModal() {
+            graphModal.classList.remove('active');
+             if (scoreChart) { scoreChart.destroy(); scoreChart = null; }
+        }
+
+        /** Clears the long press timer. */
+        function clearPressTimer() {
+            if (pressTimer !== null) { clearTimeout(pressTimer); pressTimer = null; }
+        }
+
+        // --- Event Handlers ---
+        function handlePressStart(event) {
+            const playerCard = event.target.closest('.player-card');
+            if (!playerCard) return;
+            event.preventDefault();
+            const playerId = parseInt(playerCard.dataset.playerId, 10);
+            if (isNaN(playerId)) return;
+            clearPressTimer(); isLongPress = false;
+            pressTimer = setTimeout(() => {
+                isLongPress = true; decrementScore(playerId);
+                if (navigator.vibrate) navigator.vibrate(100);
+            }, longPressDuration);
+        }
+        function handlePressEnd(event) {
+            const playerCard = event.target.closest('.player-card');
+            if (!playerCard) return;
+            event.preventDefault();
+            const playerId = parseInt(playerCard.dataset.playerId, 10);
+            if (isNaN(playerId)) return;
+            clearPressTimer();
+            if (!isLongPress) { incrementScore(playerId); }
+            isLongPress = false;
+        }
+        function handlePressCancel(event) {
+             const playerCard = event.target.closest('.player-card');
+             if (!playerCard) return;
+             event.preventDefault(); clearPressTimer(); isLongPress = false;
+        }
+        /** Handles click on the 'Set Scores to 0' button inside the modal */
+        function handleModalResetClick() {
+             console.log('Setting modal score inputs to 0.');
+             const scoreInputs = playerSettingsContainer.querySelectorAll('input[type="number"]');
+             scoreInputs.forEach(input => { input.value = 0; });
+        }
+
+
+        // --- Initialization Code ---
+        function initializeApp() {
+            console.log('Initializing Scorekeeper App...');
+            const loaded = loadStateFromLocalStorage();
+            if (!loaded) {
+                console.log('No valid saved state found, initializing defaults.');
+                players = [ { id: 1, name: 'Player 1', score: 0 }, { id: 2, name: 'Player 2', score: 0 } ];
+                resetHistory();
+                saveStateToLocalStorage();
+            } else {
+                 console.log('Successfully loaded state from Local Storage.');
+            }
+            renderPlayerCards();
+
+            // --- Attach Event Listeners ---
+            playersContainer.addEventListener('pointerdown', handlePressStart);
+            playersContainer.addEventListener('pointerup', handlePressEnd);
+            playersContainer.addEventListener('pointerleave', handlePressCancel);
+            playersContainer.addEventListener('contextmenu', (e) => { if (e.target.closest('.player-card')) e.preventDefault(); });
+            settingsButton.addEventListener('click', openSettingsModal);
+            cancelSettingsButton.addEventListener('click', closeSettingsModal);
+            saveSettingsButton.addEventListener('click', saveSettings);
+            graphButton.addEventListener('click', openGraphModal);
+            closeGraphButton.addEventListener('click', closeGraphModal);
+            resetScoresModalButton.addEventListener('click', handleModalResetClick);
+
+            // Add listeners for the new +/- buttons
+            decrementPlayersButton.addEventListener('click', () => {
+                let currentCount = parseInt(numPlayersDisplay.value, 10);
+                if (currentCount > minPlayers) {
+                    currentCount--;
+                    numPlayersDisplay.value = currentCount;
+                    updateCountButtonStates(currentCount);
+                    updatePlayerInputsUI(currentCount);
+                }
+            });
+            incrementPlayersButton.addEventListener('click', () => {
+                let currentCount = parseInt(numPlayersDisplay.value, 10);
+                if (currentCount < maxPlayers) { // Use updated maxPlayers
+                    currentCount++;
+                    numPlayersDisplay.value = currentCount;
+                    updateCountButtonStates(currentCount);
+                    updatePlayerInputsUI(currentCount);
+                }
+            });
+
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(adjustAllFontSizes, 150);
+            });
+            console.log('Scorekeeper App Initialized.');
+        }
+
+        // --- Start the App ---
+        initializeApp();
+
+    </script>
+
+</body>
+</html>
