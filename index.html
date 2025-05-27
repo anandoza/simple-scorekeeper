@@ -187,6 +187,26 @@
         </div>
     </div>
 
+    <div id="share-link-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg flex flex-col">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800 flex-shrink-0">Share Link</h2>
+            <div class="flex-grow mb-4">
+                <p class="text-sm text-gray-600 mb-2">Share this link with others:</p>
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="share-url-display" readonly class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-700 focus:outline-none focus:ring-0 focus:border-gray-300">
+                    <button id="copy-share-url-button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150 whitespace-nowrap">
+                        Copy
+                    </button>
+                </div>
+            </div>
+            <div class="flex justify-end flex-shrink-0 border-t pt-4">
+                <button id="close-share-link-modal-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         // --- Configuration ---
@@ -237,9 +257,64 @@
         const sharePreviewData = document.getElementById('share-preview-data');
         const loadSharedScoresButton = document.getElementById('load-shared-scores-button');
         const dismissSharedScoresButton = document.getElementById('dismiss-shared-scores-button');
+        const shareLinkModal = document.getElementById('share-link-modal');
+        const shareUrlDisplayInput = document.getElementById('share-url-display');
+        const copyShareUrlButton = document.getElementById('copy-share-url-button');
+        const closeShareLinkModalButton = document.getElementById('close-share-link-modal-button');
 
 
         // --- Functions ---
+
+        /** Opens the Share Link modal and populates it with the given URL. */
+        function openShareLinkModal(url) {
+            if (shareUrlDisplayInput) {
+                shareUrlDisplayInput.value = url;
+            }
+            if (shareLinkModal) {
+                shareLinkModal.classList.add('active');
+            }
+            // Reset copy button text
+            if (copyShareUrlButton) {
+                copyShareUrlButton.textContent = 'Copy';
+                copyShareUrlButton.classList.remove('bg-green-600');
+                copyShareUrlButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            }
+        }
+
+        /** Handles the click event for the "Copy Share URL" button. */
+        async function handleCopyShareUrl() {
+            const urlToCopy = shareUrlDisplayInput ? shareUrlDisplayInput.value : '';
+            if (!urlToCopy) {
+                console.error('No URL to copy.');
+                return;
+            }
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(urlToCopy);
+                    console.log('URL copied to clipboard.');
+                    if (copyShareUrlButton) {
+                        const originalText = copyShareUrlButton.textContent;
+                        copyShareUrlButton.textContent = 'Copied!';
+                        copyShareUrlButton.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                        copyShareUrlButton.classList.add('bg-green-600'); // Green for success
+
+                        setTimeout(() => {
+                            copyShareUrlButton.textContent = originalText;
+                            copyShareUrlButton.classList.remove('bg-green-600');
+                            copyShareUrlButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                        }, 2000); // Revert after 2 seconds
+                    }
+                } catch (err) {
+                    console.error('Failed to copy URL to clipboard:', err);
+                    alert('Could not copy to clipboard. Please copy manually.');
+                }
+            } else {
+                console.error('Clipboard API not available.');
+                alert('Clipboard API not available. Please copy manually.');
+            }
+        }
+
 
         /** Shows the share preview modal with data from the URL. */
         function showSharePreviewModal(sharedPlayersArray) {
@@ -699,13 +774,32 @@
         }
 
         /** Handles the click event for the Share button. */
-        function handleShareButtonClick() {
-            const shareUrl = generateShareUrl(); // No longer needs 'players' argument
-            if (shareUrl) {
-                prompt("Copy this link to share your scores:", shareUrl);
-            } else {
-                alert("Could not generate share link.");
+        async function handleShareButtonClick() { // Made async to await navigator.share
+            const generatedUrl = generateShareUrl();
+
+            if (!generatedUrl) {
+                alert("Could not generate share link."); // Keep alert for user feedback
                 console.error('Share URL generation failed or returned empty.');
+                return;
+            }
+
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Scorekeeper Scores',
+                        text: 'Here are the current scores from Scorekeeper!',
+                        url: generatedUrl
+                    });
+                    console.log('URL shared successfully via Web Share API.');
+                } catch (error) {
+                    console.log('Web Share API failed or cancelled: ', error);
+                    // Fallback to custom modal if Web Share API fails (e.g., user cancels)
+                    openShareLinkModal(generatedUrl);
+                }
+            } else {
+                // Fallback to custom modal if Web Share API is not supported
+                console.log('Web Share API not supported, falling back to custom modal.');
+                openShareLinkModal(generatedUrl);
             }
         }
 
@@ -854,28 +948,35 @@
                         scoreHistory = pendingUrlState.history;
                         tickCounter = pendingUrlState.tick;
 
-                        // DO NOT call resetHistory() here, as we are loading the history.
-                        saveStateToLocalStorage(); // Save the full loaded state
+                        saveStateToLocalStorage();
                         renderPlayerCards();
-                        updateDocumentTitle(); // Update title with new scores and players
-
+                        updateDocumentTitle();
                         console.log('Full state (scores, history, and tick) loaded from URL and applied.');
-                        pendingUrlState = null; // Clear the pending state
+                        pendingUrlState = null;
                     } else {
                         console.warn('Load Scores clicked, but pendingUrlState was invalid or not the expected object.');
-                        // Optionally, proceed with standard initialization if pending state is bad
-                        // proceedWithStandardInitialization();
                     }
-                    sharePreviewModal.classList.remove('active'); // Close modal
+                    sharePreviewModal.classList.remove('active');
                 });
             }
-
             if (dismissSharedScoresButton) {
                 dismissSharedScoresButton.addEventListener('click', () => {
                     console.log('Shared scores dismissed. Proceeding with standard init.');
                     pendingUrlState = null;
                     sharePreviewModal.classList.remove('active');
-                    proceedWithStandardInitialization(); // Load from local storage or defaults
+                    proceedWithStandardInitialization();
+                });
+            }
+
+            // Share Link Modal Button Listeners
+            if (copyShareUrlButton) {
+                copyShareUrlButton.addEventListener('click', handleCopyShareUrl);
+            }
+            if (closeShareLinkModalButton) {
+                closeShareLinkModalButton.addEventListener('click', () => {
+                    if (shareLinkModal) {
+                        shareLinkModal.classList.remove('active');
+                    }
                 });
             }
 
