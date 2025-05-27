@@ -112,6 +112,9 @@
          <button id="graph-button" title="Show Score History" class="bg-gray-700 hover:bg-gray-800 text-white p-3 rounded-lg shadow-md transition-colors duration-150">
             <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/line-chart.svg" alt="Graph" class="w-6 h-6 icon-white"/>
         </button>
+        <button id="share-button" title="Share Scores" class="bg-gray-700 hover:bg-gray-800 text-white p-3 rounded-lg shadow-md transition-colors duration-150">
+            <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/share-2.svg" alt="Share" class="w-6 h-6 icon-white"/>
+        </button>
         <button id="settings-button" title="Open Settings" class="bg-gray-700 hover:bg-gray-800 text-white p-3 rounded-lg shadow-md transition-colors duration-150">
              <img src="https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/settings.svg" alt="Settings" class="w-6 h-6 icon-white"/>
         </button>
@@ -164,6 +167,26 @@
         </div>
     </div>
 
+    <div id="share-preview-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-start justify-center p-4 pt-16 z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md flex flex-col">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Shared Scores Detected</h2>
+            <div class="mb-4">
+                <p class="text-sm text-gray-600">A shared scoreboard was found in the URL. Preview:</p>
+                <div id="share-preview-data" class="mt-2 p-3 bg-gray-50 rounded text-gray-700 max-h-40 overflow-y-auto">
+                    <!-- Preview data will be inserted here by JavaScript -->
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 border-t pt-4">
+                <button id="dismiss-shared-scores-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                    Dismiss
+                </button>
+                <button id="load-shared-scores-button" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-150">
+                    Load Scores
+                </button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         // --- Configuration ---
@@ -191,6 +214,7 @@
         let pressTimer = null;
         let isLongPress = false;
         let scoreChart = null;
+        let pendingUrlState = null; // For storing player data from URL temporarily
 
         // --- DOM Elements ---
         const playersContainer = document.getElementById('players-container');
@@ -208,9 +232,25 @@
         const scoreChartCanvas = document.getElementById('score-chart-canvas');
         const resetScoresModalButton = document.getElementById('reset-scores-modal-button');
         const playersContainerWrapper = document.getElementById('players-container-wrapper');
+        const shareButton = document.getElementById('share-button');
+        const sharePreviewModal = document.getElementById('share-preview-modal');
+        const sharePreviewData = document.getElementById('share-preview-data');
+        const loadSharedScoresButton = document.getElementById('load-shared-scores-button');
+        const dismissSharedScoresButton = document.getElementById('dismiss-shared-scores-button');
 
 
         // --- Functions ---
+
+        /** Shows the share preview modal with data from the URL. */
+        function showSharePreviewModal(urlPlayers) {
+            if (!urlPlayers || urlPlayers.length === 0) {
+                console.warn('showSharePreviewModal called with no player data.');
+                return;
+            }
+            const previewText = urlPlayers.map(player => `${player.name}: ${player.score} point${player.score === 1 ? '' : 's'}`).join('\n');
+            sharePreviewData.textContent = previewText;
+            sharePreviewModal.classList.add('active');
+        }
 
         /** Updates the document title with current scores. */
         function updateDocumentTitle() {
@@ -257,6 +297,66 @@
                 console.error('Error loading state from Local Storage:', error);
             }
             return false;
+        }
+
+        /**
+         * Attempts to load player data from a 'data' URL query parameter.
+         * @returns {Array<Object>|null} An array of player objects if successful, otherwise null.
+         */
+        function loadStateFromUrl() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('data')) {
+                    const base64String = urlParams.get('data');
+                    const jsonString = atob(base64String); // Can throw an error if not valid Base64
+                    const parsedData = JSON.parse(jsonString); // Can throw an error if not valid JSON
+
+                    if (!Array.isArray(parsedData)) {
+                        console.error('Error loading data from URL: Decoded data is not an array.');
+                        return null;
+                    }
+
+                    if (parsedData.length < minPlayers || parsedData.length > maxPlayers) {
+                        console.error(`Error loading data from URL: Player count (${parsedData.length}) is outside the allowed range (${minPlayers}-${maxPlayers}).`);
+                        return null;
+                    }
+
+                    const isValidPlayerData = parsedData.every(player =>
+                        typeof player === 'object' && player !== null &&
+                        'id' in player && // ID can be any type, typically number or string
+                        typeof player.name === 'string' &&
+                        typeof player.score === 'number' && !isNaN(player.score)
+                    );
+
+                    if (!isValidPlayerData) {
+                        console.error('Error loading data from URL: Player data structure is invalid.');
+                        return null;
+                    }
+
+                    console.log('Successfully loaded player data from URL.');
+                    return parsedData; // Return the validated player data
+                }
+            } catch (error) {
+                console.error('Error processing data from URL:', error);
+                return null;
+            }
+            return null; // No 'data' parameter found
+        }
+
+        /**
+         * Generates a shareable URL with player data.
+         * @param {Array<Object>} currentPlayers - Array of player objects.
+         * @returns {string} The generated URL.
+         */
+        function generateShareUrl(currentPlayers) {
+            try {
+                const jsonString = JSON.stringify(currentPlayers);
+                const base64String = btoa(jsonString);
+                return `https://anandoza.github.io/simple-scorekeeper/?data=${base64String}`;
+            } catch (error) {
+                console.error('Error generating share URL:', error);
+                return ''; // Return empty string or handle error as appropriate
+            }
         }
 
 
@@ -548,6 +648,17 @@
             }
         }
 
+        /** Handles the click event for the Share button. */
+        function handleShareButtonClick() {
+            const shareUrl = generateShareUrl(players);
+            if (shareUrl) {
+                prompt("Copy this link to share your scores:", shareUrl);
+            } else {
+                alert("Could not generate share link.");
+                console.error('Share URL generation failed or returned empty.');
+            }
+        }
+
         // --- Event Handlers ---
         function handlePressStart(event) {
             const playerCard = event.target.closest('.player-card');
@@ -615,21 +726,38 @@
 
 
         // --- Initialization Code ---
+
+        /**
+         * Handles the standard initialization path:
+         * 1. Tries to load from Local Storage.
+         * 2. If Local Storage fails or is empty, sets up default players.
+         * 3. Resets history, saves state, renders cards, and updates title.
+         */
+        function proceedWithStandardInitialization() {
+            console.log('Proceeding with standard initialization...');
+            const loadedFromLocalStorage = loadStateFromLocalStorage();
+            if (!loadedFromLocalStorage) {
+                console.log('No valid saved state found in Local Storage, initializing defaults.');
+                players = [ { id: 1, name: 'Player 1', score: 0 }, { id: 2, name: 'Player 2', score: 0 } ];
+                // resetHistory will record this initial state.
+                resetHistory(); // This also calls updateDocumentTitle indirectly.
+                saveStateToLocalStorage(); // Save the default state.
+            } else {
+                console.log('Successfully loaded state from Local Storage.');
+                // updateDocumentTitle is called by resetHistory if defaults are set,
+                // or should be called if loaded from storage and history wasn't reset.
+                // If loadStateFromLocalStorage populates players, scoreHistory, tickCounter, then:
+                updateDocumentTitle(); // Ensure title is updated for local storage state.
+            }
+            renderPlayerCards();
+            // updateDocumentTitle(); // Called within resetHistory or above, ensure it's covered.
+        }
+
         function initializeApp() {
             console.log('Initializing Scorekeeper App...');
-            const loaded = loadStateFromLocalStorage();
-            if (!loaded) {
-                console.log('No valid saved state found, initializing defaults.');
-                players = [ { id: 1, name: 'Player 1', score: 0 }, { id: 2, name: 'Player 2', score: 0 } ];
-                resetHistory();
-                saveStateToLocalStorage();
-            } else {
-                 console.log('Successfully loaded state from Local Storage.');
-                 updateDocumentTitle();
-            }
-            renderPlayerCards(); // Render cards based on loaded or default state
 
             // --- Attach Event Listeners ---
+            // These listeners are attached first, regardless of initial load path.
             playersContainer.addEventListener('pointerdown', handlePressStart);
             // Attach pointerup to the document to catch lifts anywhere
             document.addEventListener('pointerup', handlePressEnd);
@@ -637,6 +765,9 @@
 
             playersContainer.addEventListener('contextmenu', (e) => { if (e.target.closest('.player-card')) e.preventDefault(); });
             settingsButton.addEventListener('click', openSettingsModal);
+            if(shareButton) {
+                shareButton.addEventListener('click', handleShareButtonClick);
+            }
             cancelSettingsButton.addEventListener('click', closeSettingsModal);
             saveSettingsButton.addEventListener('click', saveSettings);
             graphButton.addEventListener('click', openGraphModal);
@@ -661,17 +792,51 @@
                 }
             });
 
+            // Share Preview Modal Button Listeners
+            if (loadSharedScoresButton) {
+                loadSharedScoresButton.addEventListener('click', () => {
+                    if (pendingUrlState) {
+                        players = pendingUrlState;
+                        resetHistory(); // This calls updateDocumentTitle
+                        saveStateToLocalStorage();
+                        renderPlayerCards();
+                        // updateDocumentTitle(); // Already called by resetHistory
+                        console.log('Scores loaded from URL and applied.');
+                        pendingUrlState = null;
+                    }
+                    sharePreviewModal.classList.remove('active');
+                });
+            }
+
+            if (dismissSharedScoresButton) {
+                dismissSharedScoresButton.addEventListener('click', () => {
+                    console.log('Shared scores dismissed. Proceeding with standard init.');
+                    pendingUrlState = null;
+                    sharePreviewModal.classList.remove('active');
+                    proceedWithStandardInitialization(); // Load from local storage or defaults
+                });
+            }
+
+            // Attempt to load state from URL
+            pendingUrlState = loadStateFromUrl();
+
+            if (pendingUrlState) {
+                console.log('Pending state from URL found, showing preview modal.');
+                showSharePreviewModal(pendingUrlState);
+                // App will wait for modal interaction.
+                // proceedWithStandardInitialization() will be called by dismissSharedScoresButton if needed.
+            } else {
+                // No URL state, proceed with standard initialization immediately.
+                proceedWithStandardInitialization();
+            }
+
+            // Non-state-dependent initializations
             let resizeTimeout;
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimeout);
                 adjustAllFontSizes();
-                // If svh doesn't work reliably, uncomment JS height calculation:
-                // const controlBar = document.querySelector('.sticky.bottom-0');
-                // const controlBarHeight = controlBar ? controlBar.offsetHeight : 80; // Fallback height
-                // playersContainerWrapper.style.height = `${window.innerHeight - controlBarHeight}px`;
-
             });
-            console.log('Scorekeeper App Initialized.');
+            console.log('Scorekeeper App Initialized event listeners and is ready for state.');
         }
 
         // --- Start the App ---
